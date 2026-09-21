@@ -48,7 +48,7 @@ def run_web():
 
 # --- Игровая логика ---
 
-def new_game():
+def create_game():
     return {
         "krait_hp": KRAIT_HP,
         "nightmare_hp": NIGHTMARE_HP,
@@ -134,7 +134,7 @@ def update_combo(game, zone):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    games[user_id] = new_game()
+    games[user_id] = create_game()
 
     game = games[user_id]
 
@@ -359,7 +359,7 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     user_id = query.from_user.id
-    games[user_id] = new_game()
+    games[user_id] = create_game()
 
     game = games[user_id]
 
