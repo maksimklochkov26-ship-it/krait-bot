@@ -1,6 +1,9 @@
 import os
 import random
 import logging
+from threading import Thread
+
+from flask import Flask
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -29,6 +32,21 @@ ZONES = {
 
 games = {}
 
+# --- Flask-заглушка для Render Web Service ---
+web = Flask(__name__)
+
+
+@web.route("/")
+def home():
+    return "Krait bot is alive"
+
+
+def run_web():
+    port = int(os.getenv("PORT", 10000))
+    web.run(host="0.0.0.0", port=port)
+
+
+# --- Игровая логика ---
 
 def new_game():
     return {
@@ -359,6 +377,10 @@ def main():
         raise RuntimeError(
             "Не задан BOT_TOKEN. Добавь токен в переменные окружения."
         )
+
+    # Запускаем Flask-заглушку в отдельном потоке,
+    # чтобы Render Web Service видел открытый порт.
+    Thread(target=run_web, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
 
