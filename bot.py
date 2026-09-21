@@ -52,10 +52,19 @@ def create_game():
     return {
         "krait_hp": KRAIT_HP,
         "nightmare_hp": NIGHTMARE_HP,
-        "nightmare_zone": random.choice(list(ZONES.keys())),
+        # скрытая защита Кошмара (на фазу атаки игрока)
+        "nightmare_defense": random.choice(list(ZONES.keys())),
+        # скрытая атака Кошмара (на фазу защиты игрока)
+        "nightmare_attack": random.choice(list(ZONES.keys())),
+        # что игрок выбрал в текущем ходу
+        "krait_attack": None,
+        "krait_defense": None,
+        # комбо
         "combo_progress": 0,
+        # стан
         "stunned": False,
-        "phase": "defense",
+        # фаза: "attack" | "defense" | "stun_attack" | "finished"
+        "phase": "attack",
     }
 
 
@@ -67,30 +76,15 @@ def status(game):
     )
 
 
-def defense_buttons():
+def zone_buttons(callback_prefix):
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🧠 Голова", callback_data="head"),
-            InlineKeyboardButton("🫀 Туловище", callback_data="body"),
+            InlineKeyboardButton("🧠 Голова", callback_data=f"{callback_prefix}:head"),
+            InlineKeyboardButton("🫀 Туловище", callback_data=f"{callback_prefix}:body"),
         ],
         [
-            InlineKeyboardButton("🦵 Ноги", callback_data="legs"),
+            InlineKeyboardButton("🦵 Ноги", callback_data=f"{callback_prefix}:legs"),
         ],
-    ])
-
-
-def attack_button():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚔️ Атаковать", callback_data="attack")]
-    ])
-
-
-def stun_attack_button():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "⚔️ Ударить — Кошмар оглушён",
-            callback_data="stun_attack"
-        )]
     ])
 
 
@@ -102,12 +96,10 @@ def new_game_button():
 
 def update_combo(game, zone):
     """
-    Скрытое комбо:
-    Голова → Голова → Ноги
+    Скрытое комбо: голова → голова → ноги (по зонам атаки).
 
-    Отдельные успешные элементы игроку не показываются.
+    Любое отклонение → сброс в 0 (новая попытка с нуля).
     """
-
     progress = game["combo_progress"]
 
     if progress == 0:
@@ -132,18 +124,98 @@ def update_combo(game, zone):
     return False
 
 
+def format_attack_result(game):
+    """Результат атаки Крайта по Кошмару."""
+    krait_zone = game["krait_attack"]
+    nightmare_def = game["nightmare_defense"]
+
+    if krait_zone == nightmare_def:
+        return (
+            f"⚔️ Крайт ударил в {ZONES[krait_zone]} — "
+            f"👹 Кошмар заблокировал (0 урона)."
+        )
+    else:
+        return (
+            f"⚔️ Крайт ударил в {ZONES[krait_zone]} — попал! "
+            f"👹 Кошмар получил {DAMAGE} урона."
+        )
+
+
+def format_defense_result(game):
+    """Результат атаки Кошмара по Крайту."""
+    nightmare_atk = game["nightmare_attack"]
+    krait_zone = game["krait_defense"]
+
+    if krait_zone == nightmare_atk:
+        return (
+            f"👹 Кошмар ударил в {ZONES[nightmare_atk]} — "
+            f"🛡️ Крайт заблокировал (0 урона)."
+        )
+    else:
+        return (
+            f"👹 Кошмар ударил в {ZONES[nightmare_atk]} — попал! "
+            f"❤️ Крайт получил {DAMAGE} урона."
+        )
+
+
+def apply_results(game):
+    """Применяем урон, возвращаем тексты результатов."""
+    attack_text = format_attack_result(game)
+    defense_text = format_defense_result(game)
+
+    # урон по Кошмару
+    if game["krait_attack"] != game["nightmare_defense"]:
+        game["nightmare_hp"] -= DAMAGE
+
+    # урон по Крайту
+    if game["krait_defense"] != game["nightmare_attack"]:
+        game["krait_hp"] -= DAMAGE
+
+    if game["krait_hp"] < 0:
+        game["krait_hp"] = 0
+    if game["nightmare_hp"] < 0:
+        game["nightmare_hp"] = 0
+
+    return attack_text, defense_text
+
+
+def next_turn(game):
+    """Готовим новый обычный ход."""
+    game["nightmare_defense"] = random.choice(list(ZONES.keys()))
+    game["nightmare_attack"] = random.choice(list(ZONES.keys()))
+    game["krait_attack"] = None
+    game["krait_defense"] = None
+    game["phase"] = "attack"
+    game["stunned"] = False
+
+
+def check_end(game):
+    """Возвращает True, если игра закончена (и выставляет phase)."""
+    if game["krait_hp"] <= 0 and game["nightmare_hp"] <= 0:
+        game["phase"] = "finished"
+        return "lose"
+    if game["krait_hp"] <= 0:
+        game["phase"] = "finished"
+        return "lose"
+    if game["nightmare_hp"] <= 0:
+        game["phase"] = "finished"
+        return "win"
+    return None
+
+
+# --- Хэндлеры ---
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     games[user_id] = create_game()
-
     game = games[user_id]
 
     await update.message.reply_text(
         status(game)
-        + "\n\n👹 Кошмар готовится атаковать.\n"
-          "Угадай, куда он ударит:",
+        + "\n\n⚔️ <b>Твой ход!</b>\n"
+          "Выбери, куда атаковать Кошмара:",
         parse_mode="HTML",
-        reply_markup=defense_buttons(),
+        reply_markup=zone_buttons("attack"),
     )
 
 
@@ -153,25 +225,31 @@ async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❤️ Крайт — 200 HP\n"
         "👹 Кошмар — 300 HP\n"
         "⚔️ Оба наносят 20 урона.\n\n"
-        "Кошмар каждый ход выбирает:\n"
-        "🧠 голову\n"
-        "🫀 туловище\n"
-        "🦵 ноги\n\n"
-        "Ты должен угадать его атаку.\n\n"
-        "✅ Угадал — получаешь 0 урона.\n"
-        "❌ Не угадал — получаешь 20 урона.\n\n"
-        "🔥 Скрытое комбо:\n"
-        "<b>Голова → Голова → Ноги</b>\n\n"
-        "Игрок не видит отдельные элементы комбо.\n"
-        "После полного комбо Кошмар получает стан.\n"
-        "На следующем ходу он не атакует и не защищается.\n"
-        "Крайт получает гарантированный удар на 20 урона.\n\n"
-        "🏆 Побеждает тот, кто первым уничтожит противника.",
+        "📍 Зоны: 🧠 голова, 🫀 туловище, 🦵 ноги.\n\n"
+        "<b>Ход:</b>\n"
+        "1. Ты выбираешь, куда атаковать.\n"
+        "2. Кошмар скрыто выбирает, куда защищаться.\n"
+        "3. Ты выбираешь, куда блокировать.\n"
+        "4. Кошмар скрыто выбирает, куда атаковать.\n"
+        "5. Показывается итог хода.\n\n"
+        "✅ Если зоны совпали — блок, 0 урона.\n"
+        "❌ Если не совпали — 20 урона.\n\n"
+        "🔥 <b>Скрытое комбо:</b>\n"
+        "<b>Голова → Голова → Ноги</b> (по зонам атаки)\n\n"
+        "Комбо копится, даже если Кошмар блокирует.\n"
+        "Любая ошибка — сброс.\n"
+        "После комбо Кошмар оглушён на следующий ход:\n"
+        "он не атакует и не защищается, а Крайт наносит\n"
+        "гарантированный удар на 20 урона.\n\n"
+        "🏆 Победа: Кошмар 0 HP.\n"
+        "💀 Поражение: Крайт 0 HP.\n"
+        "🤝 Если у обоих 0 HP — поражение Крайта.",
         parse_mode="HTML",
     )
 
 
-async def defense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Игрок выбрал зону атаки."""
     query = update.callback_query
     await query.answer()
 
@@ -182,70 +260,32 @@ async def defense(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Нажми /start, чтобы начать игру.")
         return
 
-    if game["phase"] != "defense":
-        await query.answer(
-            "Сейчас это действие недоступно.",
-            show_alert=True
-        )
+    if game["phase"] != "attack":
+        await query.answer("Сейчас это действие недоступно.", show_alert=True)
         return
 
-    chosen = query.data
-    nightmare = game["nightmare_zone"]
+    zone = query.data.split(":")[1]
+    game["krait_attack"] = zone
 
-    if chosen == nightmare:
-        result = (
-            f"🛡️ <b>БЛОК!</b>\n"
-            f"Кошмар бил в {ZONES[nightmare]}.\n"
-            "Крайт угадал и не получил урон."
-        )
-    else:
-        game["krait_hp"] -= DAMAGE
-
-        result = (
-            f"💥 <b>ПОПАДАНИЕ!</b>\n"
-            f"Кошмар бил в {ZONES[nightmare]}.\n"
-            f"Крайт выбрал {ZONES[chosen]}.\n"
-            f"Крайт получает <b>{DAMAGE} урона</b>."
-        )
-
-    if game["krait_hp"] <= 0:
-        game["krait_hp"] = 0
-        game["phase"] = "finished"
-
-        await query.edit_message_text(
-            status(game)
-            + "\n\n"
-            + result
-            + "\n\n💀 <b>КРАЙТ ПРОИГРАЛ!</b>",
-            parse_mode="HTML",
-            reply_markup=new_game_button(),
-        )
-        return
-
-    combo = update_combo(game, chosen)
+    # Комбо копится здесь (скрыто от игрока)
+    combo = update_combo(game, zone)
 
     if combo:
         game["stunned"] = True
 
-        result += (
-            "\n\n🔥 <b>КОМБО ВЫПОЛНЕНО!</b>\n"
-            "👹 Кошмар оглушён.\n"
-            "На следующем ходу он не сможет атаковать или защищаться."
-        )
+    game["phase"] = "defense"
 
-    game["phase"] = "attack"
-
+    # Показываем фазу защиты — без результата атаки
     await query.edit_message_text(
         status(game)
-        + "\n\n"
-        + result
-        + "\n\n⚔️ Теперь атакуй Кошмара.",
+        + "\n\n🛡️ Теперь выбери, куда блокировать удар Кошмара:",
         parse_mode="HTML",
-        reply_markup=attack_button(),
+        reply_markup=zone_buttons("defense"),
     )
 
 
-async def attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Игрок выбрал зону блока → показываем итог хода."""
     query = update.callback_query
     await query.answer()
 
@@ -256,54 +296,58 @@ async def attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Нажми /start.")
         return
 
-    if game["phase"] != "attack":
-        await query.answer(
-            "Сейчас это действие недоступно.",
-            show_alert=True
-        )
+    if game["phase"] != "defense":
+        await query.answer("Сейчас это действие недоступно.", show_alert=True)
         return
 
-    game["nightmare_hp"] -= DAMAGE
+    zone = query.data.split(":")[1]
+    game["krait_defense"] = zone
 
-    if game["nightmare_hp"] <= 0:
-        game["nightmare_hp"] = 0
-        game["phase"] = "finished"
+    # Применяем результаты хода
+    attack_text, defense_text = apply_results(game)
 
+    # Формируем итоговое сообщение
+    text = status(game) + "\n\n" + attack_text + "\n" + defense_text
+
+    # Проверка конца игры
+    end = check_end(game)
+    if end == "win":
+        text += "\n\n🏆 <b>КРАЙТ ПОБЕДИЛ!</b>"
         await query.edit_message_text(
-            status(game)
-            + "\n\n⚔️ Крайт наносит 20 урона.\n"
-              "🏆 <b>КРАЙТ ПОБЕДИЛ!</b>",
-            parse_mode="HTML",
-            reply_markup=new_game_button(),
+            text, parse_mode="HTML", reply_markup=new_game_button()
+        )
+        return
+    elif end == "lose":
+        text += "\n\n💀 <b>КРАЙТ ПРОИГРАЛ!</b>"
+        await query.edit_message_text(
+            text, parse_mode="HTML", reply_markup=new_game_button()
         )
         return
 
+    # Если комбо собралось — стан-ход
     if game["stunned"]:
+        text += (
+            "\n\n🔥 <b>КОМБО ВЫПОЛНЕНО!</b>\n"
+            "👹 Кошмар оглушён на следующий ход.\n"
+            "Он не атакует и не защищается.\n\n"
+            "⚔️ Нанеси гарантированный удар:"
+        )
         game["phase"] = "stun_attack"
-
         await query.edit_message_text(
-            status(game)
-            + "\n\n⚔️ Крайт наносит <b>20 урона</b>.\n\n"
-              "🔥 <b>КОШМАР ОГЛУШЁН!</b>\n"
-              "Он не атакует и не защищается.\n\n"
-              "⚔️ Нанеси ему гарантированный удар:",
-            parse_mode="HTML",
-            reply_markup=stun_attack_button(),
+            text, parse_mode="HTML", reply_markup=zone_buttons("stun_attack")
         )
         return
 
+    # Обычный следующий ход
     next_turn(game)
-
+    text += "\n\n⚔️ <b>Твой ход!</b>\nВыбери, куда атаковать Кошмара:"
     await query.edit_message_text(
-        status(game)
-        + "\n\n👹 Кошмар готовится атаковать.\n"
-          "Угадай, куда он ударит:",
-        parse_mode="HTML",
-        reply_markup=defense_buttons(),
+        text, parse_mode="HTML", reply_markup=zone_buttons("attack")
     )
 
 
-async def stun_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def stun_attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Гарантированный удар по оглушённому Кошмару."""
     query = update.callback_query
     await query.answer()
 
@@ -315,43 +359,38 @@ async def stun_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if game["phase"] != "stun_attack":
-        await query.answer(
-            "Сейчас это действие недоступно.",
-            show_alert=True
-        )
+        await query.answer("Сейчас это действие недоступно.", show_alert=True)
         return
+
+    zone = query.data.split(":")[1]
 
     game["nightmare_hp"] -= DAMAGE
-    game["stunned"] = False
-
-    if game["nightmare_hp"] <= 0:
+    if game["nightmare_hp"] < 0:
         game["nightmare_hp"] = 0
-        game["phase"] = "finished"
 
+    text = (
+        status(game)
+        + f"\n\n⚔️ Крайт ударил в {ZONES[zone]} — "
+          f"Кошмар оглушён и не защищался.\n"
+          f"<b>{DAMAGE} урона!</b>"
+    )
+
+    end = check_end(game)
+    if end == "win":
+        text += "\n\n🏆 <b>КРАЙТ ПОБЕДИЛ!</b>"
         await query.edit_message_text(
-            status(game)
-            + "\n\n⚔️ Гарантированный удар: <b>20 урона</b>.\n"
-              "🏆 <b>КРАЙТ ПОБЕДИЛ!</b>",
-            parse_mode="HTML",
-            reply_markup=new_game_button(),
+            text, parse_mode="HTML", reply_markup=new_game_button()
         )
         return
 
+    # Стан закончился — новый обычный ход
+    game["stunned"] = False
     next_turn(game)
 
+    text += "\n\n🔥 Стан закончился.\n⚔️ <b>Твой ход!</b>\nВыбери, куда атаковать Кошмара:"
     await query.edit_message_text(
-        status(game)
-        + "\n\n🔥 Стан закончился.\n"
-          "👹 Кошмар снова атакует.\n"
-          "Угадай, куда он ударит:",
-        parse_mode="HTML",
-        reply_markup=defense_buttons(),
+        text, parse_mode="HTML", reply_markup=zone_buttons("attack")
     )
-
-
-def next_turn(game):
-    game["nightmare_zone"] = random.choice(list(ZONES.keys()))
-    game["phase"] = "defense"
 
 
 async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -360,15 +399,14 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = query.from_user.id
     games[user_id] = create_game()
-
     game = games[user_id]
 
     await query.edit_message_text(
         status(game)
         + "\n\n👹 <b>НОВАЯ БИТВА!</b>\n"
-          "Угадай, куда ударит Кошмар:",
+          "⚔️ Выбери, куда атаковать Кошмара:",
         parse_mode="HTML",
-        reply_markup=defense_buttons(),
+        reply_markup=zone_buttons("attack"),
     )
 
 
@@ -378,8 +416,6 @@ def main():
             "Не задан BOT_TOKEN. Добавь токен в переменные окружения."
         )
 
-    # Запускаем Flask-заглушку в отдельном потоке,
-    # чтобы Render Web Service видел открытый порт.
     Thread(target=run_web, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
@@ -387,33 +423,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("rules", rules))
 
-    app.add_handler(
-        CallbackQueryHandler(
-            defense,
-            pattern="^(head|body|legs)$"
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            attack,
-            pattern="^attack$"
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            stun_attack,
-            pattern="^stun_attack$"
-        )
-    )
-
-    app.add_handler(
-        CallbackQueryHandler(
-            new_game,
-            pattern="^new_game$"
-        )
-    )
+    app.add_handler(CallbackQueryHandler(attack_phase, pattern=r"^attack:"))
+    app.add_handler(CallbackQueryHandler(defense_phase, pattern=r"^defense:"))
+    app.add_handler(CallbackQueryHandler(stun_attack_phase, pattern=r"^stun_attack:"))
+    app.add_handler(CallbackQueryHandler(new_game, pattern=r"^new_game$"))
 
     print("Крайт против Кошмара запущен!")
 
