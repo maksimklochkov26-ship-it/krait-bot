@@ -30,9 +30,6 @@ ZONES = {
     "legs": "🦵 Ноги",
 }
 
-# Последовательность комбо (для раскрытия после первого срабатывания)
-COMBO_SEQUENCE = "🧠 Голова → 🧠 Голова → 🦵 Ноги"
-
 games = {}
 
 # --- Flask-заглушка для Render Web Service ---
@@ -69,10 +66,11 @@ GAME_DESCRIPTION = (
     "✅ Зоны совпали — блок, 0 урона.\n"
     "❌ Не совпали — 20 урона.\n\n"
     "🔥 <b>СЕКРЕТНОЕ КОМБО</b>\n\n"
-    "Где-то в бою спрятано комбо из трёх ударов подряд.\n"
-    "Угадаешь последовательность — Кошмар будет оглушён\n"
-    "на следующий ход: он не сможет ни атаковать, ни\n"
-    "защищаться, а ты нанесёшь гарантированный удар.\n\n"
+    "В каждой битве спрятано своё комбо из трёх\n"
+    "ударов подряд. Угадаешь последовательность —\n"
+    "Кошмар будет оглушён на следующий ход: он не\n"
+    "сможет ни атаковать, ни защищаться, а ты\n"
+    "нанесёшь гарантированный удар.\n\n"
     "Любая ошибка — сброс, начинай заново.\n"
     "Последовательность не подскажем — ищи сам.\n\n"
     "🏆 Победа: Кошмар 0 HP.\n"
@@ -83,6 +81,15 @@ GAME_DESCRIPTION = (
 
 # --- Игровая логика ---
 
+def generate_combo():
+    """Случайная последовательность из 3 зон, кроме трёх одинаковых."""
+    zones = list(ZONES.keys())
+    while True:
+        seq = [random.choice(zones) for _ in range(3)]
+        if not (seq[0] == seq[1] == seq[2]):
+            return seq
+
+
 def create_game():
     return {
         "krait_hp": KRAIT_HP,
@@ -91,6 +98,7 @@ def create_game():
         "nightmare_attack": random.choice(list(ZONES.keys())),
         "krait_attack": None,
         "krait_defense": None,
+        "combo": generate_combo(),
         "combo_progress": 0,
         "combo_revealed": False,
         "stunned": False,
@@ -130,25 +138,29 @@ def intro_button():
     ])
 
 
+def combo_to_text(seq):
+    """Превращает последовательность зон в читаемый текст."""
+    return " → ".join(ZONES[z] for z in seq)
+
+
 def update_combo(game, zone):
+    """
+    Скрытое комбо. Последовательность — game["combo"].
+    Любое отклонение → сброс в 0 (новая попытка с нуля).
+    """
     progress = game["combo_progress"]
+    seq = game["combo"]
 
-    if progress == 0:
-        if zone == "head":
-            game["combo_progress"] = 1
-        else:
-            game["combo_progress"] = 0
-
-    elif progress == 1:
-        if zone == "head":
-            game["combo_progress"] = 2
-        else:
-            game["combo_progress"] = 0
-
-    elif progress == 2:
-        if zone == "legs":
+    if progress < 3 and zone == seq[progress]:
+        game["combo_progress"] += 1
+        if game["combo_progress"] == 3:
             game["combo_progress"] = 0
             return True
+    else:
+        # Сброс. Если первый элемент последовательности совпал —
+        # начинаем новую попытку с 1.
+        if zone == seq[0]:
+            game["combo_progress"] = 1
         else:
             game["combo_progress"] = 0
 
@@ -232,7 +244,6 @@ def check_end(game):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
-    # Если игра уже идёт — сразу начинаем новый бой
     if user_id in games and games[user_id]["phase"] != "finished":
         games[user_id] = create_game()
         game = games[user_id]
@@ -245,7 +256,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Иначе — показываем описание
     await update.message.reply_text(
         GAME_DESCRIPTION,
         parse_mode="HTML",
@@ -349,7 +359,7 @@ async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         combo_text = "\n\n🔥 <b>КОМБО ВЫПОЛНЕНО!</b>"
         if not game["combo_revealed"]:
             combo_text += (
-                f"\nПоследовательность: <b>{COMBO_SEQUENCE}</b>"
+                f"\nПоследовательность: <b>{combo_to_text(game['combo'])}</b>"
             )
             game["combo_revealed"] = True
         combo_text += (
