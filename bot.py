@@ -310,6 +310,14 @@ def check_end(game):
     return None
 
 
+def clamp_hp(game):
+    """Обнуляем HP, если ушли в минус."""
+    if game["krait_hp"] < 0:
+        game["krait_hp"] = 0
+    if game["nightmare_hp"] < 0:
+        game["nightmare_hp"] = 0
+
+
 def hint_text(step):
     if step == 1:
         return "\n\n✨ <i>Крайт чувствует: что-то дрогнуло во тьме...</i>"
@@ -607,16 +615,26 @@ async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cls_key = game["class"]
         game["stun_effect"] = cls_key
 
+        # Строка с последовательностью — только при первом срабатывании комбо
+        combo_line = ""
+        if not game["combo_revealed"]:
+            combo_line = (
+                f"\n📜 Последовательность: "
+                f"<b>{combo_to_text(game['combo'])}</b>\n"
+            )
+            game["combo_revealed"] = True
+
         if cls_key == "dodge":
             game["phase"] = "dodge_attack_1"
             await remove_buttons(query)
             await query.message.reply_text(
                 status(game)
-                + "\n\n⚡ <b>УВОРОТ АКТИВИРОВАН</b>\n\n"
-                "Крайт входит в поток. Следующие два удара —\n"
-                "быстрые, неуловимые. Кошмар не успеет ответить.\n\n"
-                "⚠️ <i>Удары в этом ходу не идут в счёт комбо.</i>\n\n"
-                "⚔️ Выбери <b>первую</b> зону атаки:",
+                + "\n\n⚡ <b>УВОРОТ АКТИВИРОВАН</b>\n"
+                + combo_line
+                + "\nКрайт входит в поток. Следующие два удара —\n"
+                  "быстрые, неуловимые. Кошмар не успеет ответить.\n\n"
+                  "⚠️ <i>Удары в этом ходу не идут в счёт комбо.</i>\n\n"
+                  "⚔️ Выбери <b>первую</b> зону атаки:",
                 parse_mode="HTML",
                 reply_markup=attack_screen_buttons(game, prefix="dodge_attack_1"),
             )
@@ -627,10 +645,11 @@ async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await remove_buttons(query)
             await query.message.reply_text(
                 status(game)
-                + "\n\n🔥 <b>КОМБО! КОШМАР ОГЛУШЁН</b>\n\n"
-                "Кошмар пропускает ход. Он не атакует\n"
-                "и не защищается.\n\n"
-                "⚔️ Выбери действие и ударь:",
+                + "\n\n🔥 <b>КОМБО! КОШМАР ОГЛУШЁН</b>\n"
+                + combo_line
+                + "\nКошмар пропускает ход. Он не атакует\n"
+                  "и не защищается.\n\n"
+                  "⚔️ Выбери действие и ударь:",
                 parse_mode="HTML",
                 reply_markup=attack_screen_buttons(game, prefix="tank_stun"),
             )
@@ -641,11 +660,12 @@ async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await remove_buttons(query)
             await query.message.reply_text(
                 status(game)
-                + "\n\n💥 <b>КОМБО! КРИТ АКТИВИРОВАН</b>\n\n"
-                "Следующий удар Крайта — критический.\n"
-                "Кошмар не защитится полностью,\n"
-                "но ударит в ответ.\n\n"
-                "⚔️ Выбери действие и ударь:",
+                + "\n\n💥 <b>КОМБО! КРИТ АКТИВИРОВАН</b>\n"
+                + combo_line
+                + "\nСледующий удар Крайта — критический.\n"
+                  "Кошмар не защитится полностью,\n"
+                  "но ударит в ответ.\n\n"
+                  "⚔️ Выбери действие и ударь:",
                 parse_mode="HTML",
                 reply_markup=attack_screen_buttons(game, prefix="crit_stun_attack"),
             )
@@ -680,6 +700,7 @@ async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game["krait_defense"] = zone
 
     attack_text, defense_text = resolve_normal_round(game)
+    clamp_hp(game)
 
     text = status(game) + "\n\n" + attack_text + "\n" + defense_text
 
@@ -759,6 +780,7 @@ async def tank_stun_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
     update_combo(game, zone)
 
     attack_text, defense_text = resolve_tank_stun(game)
+    clamp_hp(game)
 
     text = status(game) + "\n\n" + attack_text + "\n" + defense_text
 
@@ -860,6 +882,7 @@ async def crit_stun_defense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game["krait_defense"] = zone
 
     attack_text, defense_text = resolve_crit_stun(game)
+    clamp_hp(game)
 
     text = status(game) + "\n\n" + attack_text + "\n" + defense_text
 
@@ -962,6 +985,7 @@ async def dodge_attack_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game["combo_progress"] = 0
 
     attack_text, defense_text = resolve_dodge_stun(game)
+    clamp_hp(game)
 
     text = status(game) + "\n\n" + attack_text + "\n" + defense_text
 
