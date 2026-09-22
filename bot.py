@@ -141,7 +141,6 @@ GAME_DESCRIPTION = (
 # --- Игровая логика ---
 
 def generate_combo():
-    """Случайная последовательность из 3 зон, кроме трёх одинаковых."""
     zones = list(ZONES.keys())
     while True:
         seq = [random.choice(zones) for _ in range(3)]
@@ -196,7 +195,6 @@ def class_buttons():
 
 
 def attack_screen_buttons(game, prefix="attack"):
-    """Кнопки экрана атаки: переключатель режима + зоны."""
     if game["in_defense"]:
         mode_label = "⚔️ Выйти из защиты"
         mode_cb = f"{prefix}_mode:off"
@@ -244,7 +242,6 @@ def combo_to_text(seq):
 
 
 def update_combo(game, zone):
-    """Обычное комбо. Возвращает 0/1/2/3 (3 = собрано)."""
     progress = game["combo_progress"]
     seq = game["combo"]
 
@@ -319,7 +316,6 @@ async def remove_buttons(query):
 # --- Боевые резолверы ---
 
 def resolve_normal_round(game):
-    """Обычный ход: Крайт бьёт, Кошмар защищается; потом Кошмар бьёт, Крайт защищается."""
     cls = CLASSES[game["class"]]
 
     krait_zone = game["krait_attack"]
@@ -354,7 +350,6 @@ def resolve_normal_round(game):
 
 
 def resolve_tank_stun(game):
-    """Танк в стане: Кошмар не бьёт и не защищается."""
     cls = CLASSES[game["class"]]
     krait_zone = game["krait_attack"]
     dmg = cls["damage"] // 2 if game["in_defense"] else cls["damage"]
@@ -370,7 +365,6 @@ def resolve_tank_stun(game):
 
 
 def resolve_crit_stun(game):
-    """Крит: гарантированный крит-удар. Кошмар бьёт в ответ."""
     krait_zone = game["krait_attack"]
     nightmare_def = game["nightmare_defense"]
 
@@ -417,7 +411,6 @@ def resolve_crit_stun(game):
 
 
 def resolve_dodge_stun(game):
-    """Уворот: два удара по двум зонам, Кошмар промахивается."""
     cls = CLASSES[game["class"]]
     zone1 = game["krait_attack"]
     zone2 = game["dodge_zone_1"]
@@ -872,4 +865,17 @@ async def dodge_stun_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await remove_buttons(query)
     await query.message.reply_text(
         status(game)
-        + "\n\n⚡ <b>УВОРОТ
+        + "\n\n⚡ <b>УВОРОТ АКТИВИРОВАН</b>\n\n"
+        "⚠️ <i>Удары в этом ходу не идут в счёт комбо.</i>\n\n"
+        "⚔️ Выбери <b>первую</b> зону атаки:",
+        parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="dodge_attack_1"),
+    )
+
+
+async def dodge_attack_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    game = games.get
