@@ -122,7 +122,8 @@ def create_game():
         "combo": generate_combo(),
         "combo_progress": 0,
         "combo_revealed": False,
-        "hint_shown": False,
+        "hint_1_shown": False,
+        "hint_2_shown": False,
         "in_defense": False,
         "stun_turns": 0,
         "phase": "attack",
@@ -199,6 +200,7 @@ def update_combo(game, zone):
             return 3
         return game["combo_progress"]
 
+    # Сброс
     if zone == seq[0]:
         game["combo_progress"] = 1
         return 1
@@ -431,10 +433,14 @@ async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = status(game) + "\n\n" + attack_text + "\n" + defense_text
 
+    # Намёки на комбо — по одному разу на каждый уровень
     combo_step = game["combo_progress"]
-    if not game["hint_shown"] and combo_step in (1, 2):
-        text += hint_text(combo_step)
-        game["hint_shown"] = True
+    if combo_step == 1 and not game["hint_1_shown"]:
+        text += hint_text(1)
+        game["hint_1_shown"] = True
+    elif combo_step == 2 and not game["hint_2_shown"]:
+        text += hint_text(2)
+        game["hint_2_shown"] = True
 
     end = check_end(game)
     if end == "win":
