@@ -448,9 +448,7 @@ def resolve_dodge_stun(game):
     defense_text = "💨 Кошмар попытался ударить — Крайт уклонился! (0 урона)"
 
     return attack_text, defense_text
-
-
-# --- Хэндлеры ---
+    # --- Хэндлеры ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -878,4 +876,178 @@ async def dodge_attack_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     user_id = query.from_user.id
-    game = games.get
+    game = games.get(user_id)
+
+    if not game:
+        await query.message.reply_text("Нажми /start.")
+        return
+
+    if game["phase"] != "dodge_attack_1":
+        await query.answer("Сейчас это действие недоступно.", show_alert=True)
+        return
+
+    zone = query.data.split(":")[1]
+    game["krait_attack"] = zone
+
+    game["phase"] = "dodge_attack_2"
+
+    await remove_buttons(query)
+    await query.message.reply_text(
+        status(game)
+        + f"\n\n⚡ Первая зона: {ZONES[zone]}\n"
+          "Теперь выбери <b>вторую</b> зону атаки\n"
+          "(может быть той же или другой):",
+        parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="dodge_attack_2"),
+    )
+
+
+async def dodge_attack_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    game = games.get(user_id)
+
+    if not game:
+        await query.message.reply_text("Нажми /start.")
+        return
+
+    if game["phase"] != "dodge_attack_2":
+        await query.answer("Сейчас это действие недоступно.", show_alert=True)
+        return
+
+    zone = query.data.split(":")[1]
+    game["dodge_zone_1"] = zone
+
+    game["combo_progress"] = 0
+
+    attack_text, defense_text = resolve_dodge_stun(game)
+
+    text = status(game) + "\n\n" + attack_text + "\n" + defense_text
+
+    end = check_end(game)
+    if end:
+        text += end_screen_text(end)
+        await remove_buttons(query)
+        await query.message.reply_text(
+            text, parse_mode="HTML", reply_markup=new_game_button()
+        )
+        return
+
+    next_turn(game)
+    text += "\n\n⚔️ <b>Твой ход!</b>\nВыбери действие:"
+    await remove_buttons(query)
+    await query.message.reply_text(
+        text, parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="attack")
+    )
+
+
+async def new_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    await remove_buttons(query)
+
+    await query.message.reply_text(
+        "⚔️ <b>НОВАЯ БИТВА</b>\n\n"
+        "Выбери свой путь:",
+        parse_mode="HTML",
+        reply_markup=class_buttons(),
+    )
+
+
+async def new_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "⚔️ <b>НОВАЯ БИТВА</b>\n\n"
+        "Выбери свой путь:",
+        parse_mode="HTML",
+        reply_markup=class_buttons(),
+    )
+
+
+async def text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip().lower()
+
+    if text in ("новая игра", "новая", "заново", "new game"):
+        await update.message.reply_text(
+            "⚔️ <b>НОВАЯ БИТВА</b>\n\n"
+            "Выбери свой путь:",
+            parse_mode="HTML",
+            reply_markup=class_buttons(),
+        )
+        return
+
+    if text in ("правила", "правила игры", "помощь", "help"):
+        await update.message.reply_text(GAME_DESCRIPTION, parse_mode="HTML")
+        return
+
+    if text in ("старт", "начать", "играть", "start"):
+        user_id = update.effective_user.id
+        if user_id in games and games[user_id]["phase"] != "finished":
+            await update.message.reply_text(
+                "У тебя уже идёт бой. Напиши <b>новая игра</b>,\n"
+                "чтобы начать заново.",
+                parse_mode="HTML",
+            )
+        else:
+            await update.message.reply_text(
+                GAME_DESCRIPTION,
+                parse_mode="HTML",
+                reply_markup=intro_button(),
+            )
+        return
+
+    await update.message.reply_text(
+        "Не понял команду. Попробуй:\n"
+        "• <b>новая игра</b>\n"
+        "• <b>правила</b>\n"
+        "• <b>старт</b>",
+        parse_mode="HTML",
+    )
+
+
+def main():
+    if not TOKEN:
+        raise RuntimeError(
+            "Не задан BOT_TOKEN. Добавь токен в переменные окружения."
+        )
+
+    Thread(target=run_web, daemon=True).start()
+
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("new_game", new_game_cmd))
+    app.add_handler(CommandHandler("rules", rules))
+
+    app.add_handler(CallbackQueryHandler(begin_battle, pattern=r"^begin_battle$"))
+    app.add_handler(CallbackQueryHandler(choose_class, pattern=r"^class:(tank|dodge|crit)$"))
+
+    app.add_handler(CallbackQueryHandler(toggle_mode, pattern=r"^attack_mode:(on|off)$"))
+    app.add_handler(CallbackQueryHandler(attack_phase, pattern=r"^attack:(head|body|legs)$"))
+    app.add_handler(CallbackQueryHandler(defense_phase, pattern=r"^defense:"))
+
+    app.add_handler(CallbackQueryHandler(tank_stun_toggle, pattern=r"^tank_stun_mode:(on|off)$"))
+    app.add_handler(CallbackQueryHandler(tank_stun_attack, pattern=r"^tank_stun:(head|body|legs)$"))
+
+    app.add_handler(CallbackQueryHandler(crit_stun_toggle, pattern=r"^crit_stun_attack_mode:(on|off)$"))
+    app.add_handler(CallbackQueryHandler(crit_stun_attack, pattern=r"^crit_stun_attack:(head|body|legs)$"))
+    app.add_handler(CallbackQueryHandler(crit_stun_defense, pattern=r"^crit_stun_defense:"))
+
+    app.add_handler(CallbackQueryHandler(dodge_stun_toggle, pattern=r"^dodge_attack_1_mode:(on|off)$"))
+    app.add_handler(CallbackQueryHandler(dodge_attack_1, pattern=r"^dodge_attack_1:(head|body|legs)$"))
+    app.add_handler(CallbackQueryHandler(dodge_attack_2, pattern=r"^dodge_attack_2:(head|body|legs)$"))
+
+    app.add_handler(CallbackQueryHandler(new_game_cb, pattern=r"^new_game$"))
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_command))
+
+    print("Крайт против Кошмара запущен!")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
