@@ -242,6 +242,18 @@ def defense_zone_buttons():
     ])
 
 
+def crit_stun_defense_buttons():
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🧠 Голова", callback_data="crit_stun_defense:head"),
+            InlineKeyboardButton("🫀 Туловище", callback_data="crit_stun_defense:body"),
+        ],
+        [
+            InlineKeyboardButton("🦵 Ноги", callback_data="crit_stun_defense:legs"),
+        ],
+    ])
+
+
 def new_game_button():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔄 Новая игра", callback_data="new_game")]
@@ -825,7 +837,7 @@ async def crit_stun_attack(update: Update, context: ContextTypes.DEFAULT_TYPE):
         + "\n\n🛡️ Кошмар готовит ответный удар.\n"
           "Выбери, куда блокировать:",
         parse_mode="HTML",
-        reply_markup=defense_zone_buttons(),
+        reply_markup=crit_stun_defense_buttons(),
     )
 
 
