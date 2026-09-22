@@ -493,24 +493,33 @@ async def begin_battle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await remove_buttons(query)
 
-   await query.message.reply_text(
+    await query.message.reply_text(
         "🎭 <b>ВЫБЕРИ СВОЙ ПУТЬ</b>\n\n"
         "Три пути ведут к Кошмару. Три судьбы.\n"
         "Какой из них твой?\n\n"
         "🛡️ <b>ТАНК</b> — 200 HP\n"
         "   <i>«Сталь не дрогнет. Я — стена.»</i>\n"
-        "   Терпение и выдержка. Держишь удар,\n"
+        "   Терпение и выдержка. Ты держишь удар,\n"
         "   когда другие падают.\n"
-        "   🔥 Комбо: стан. Кошмар пропускает ход.\n\n"
+        "   🔥 Комбо: стан. Кошмар замирает —\n"
+        "   он не атакует и не защищается.\n"
+        "   Ты бьёшь гарантированно (20 урона, или 10 в защите).\n\n"
         "💥 <b>КРИТ</b> — 180 HP\n"
         "   <i>«Ярость — мой клинок.»</i>\n"
-        "   Точность и мощь. Удар пробивает защиту.\n"
-        "   🔥 Комбо: крит. 50 урона, 25 в блок\n"
-        "   (вне защиты); 25 урона, 15 в блок (в защите).\n\n"
+        "   Точность и мощь. Твой удар пробивает\n"
+        "   любую защиту.\n"
+        "   🔥 Комбо: критический удар, что не\n"
+        "   остановит даже блок.\n"
+        "   — Вне защиты: 50 урона (25, если в блок)\n"
+        "   — В защите: 25 урона (15, если в блок)\n"
+        "   Кошмар бьёт в ответ — блок работает.\n\n"
         "⚡ <b>УВОРОТ</b> — 160 HP\n"
         "   <i>«Где ты? Меня уже нет.»</i>\n"
-        "   Скорость и ветер. Бьёшь дважды и уходишь.\n"
-        "   🔥 Комбо: 2 удара + Кошмар не бьёт.\n\n"
+        "   Скорость и ветер. Ты бьёшь дважды\n"
+        "   и уходишь от ответа.\n"
+        "   🔥 Комбо: двойной удар по двум зонам.\n"
+        "   Кошмар атакует — но Крайт уклоняется\n"
+        "   (0 урона). Удары в этом ходу не идут в комбо.\n\n"
         "Кем ты войдёшь в этот бой?",
         parse_mode="HTML",
         reply_markup=class_buttons(),
@@ -980,7 +989,7 @@ async def new_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await remove_buttons(query)
 
     await query.message.reply_text(
-        "⚔️ <b>НОВАЯ БИТВА</b>\n\n"
+        "🎭 <b>НОВАЯ БИТВА</b>\n\n"
         "Выбери свой путь:",
         parse_mode="HTML",
         reply_markup=class_buttons(),
@@ -989,7 +998,7 @@ async def new_game_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def new_game_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "⚔️ <b>НОВАЯ БИТВА</b>\n\n"
+        "🎭 <b>НОВАЯ БИТВА</b>\n\n"
         "Выбери свой путь:",
         parse_mode="HTML",
         reply_markup=class_buttons(),
@@ -1001,7 +1010,7 @@ async def text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ("новая игра", "новая", "заново", "new game"):
         await update.message.reply_text(
-            "⚔️ <b>НОВАЯ БИТВА</b>\n\n"
+            "🎭 <b>НОВАЯ БИТВА</b>\n\n"
             "Выбери свой путь:",
             parse_mode="HTML",
             reply_markup=class_buttons(),
