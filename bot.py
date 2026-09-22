@@ -52,11 +52,12 @@ def run_web():
 
 GAME_DESCRIPTION = (
     "⚔️ <b>КРАЙТ ПРОТИВ КОШМАРА</b>\n\n"
-    "Ты — Крайт. Твой противник — Кошмар.\n"
-    "Бой пошаговый. Побеждает тот, кто первым\n"
-    "отправит противника на 0 HP.\n\n"
-    "❤️ У тебя <b>200 HP</b>\n"
-    "👹 У Кошмара <b>300 HP</b>\n"
+    "<i>Лотос расцветает лишь в час битвы.</i>\n\n"
+    "Ты — Крайт, рыцарь лотосовой школы.\n"
+    "Твой противник — Кошмар, тень, что пожирает свет.\n"
+    "Этот бой решит, кто достоин стоять под солнцем.\n\n"
+    "❤️ Крайт: <b>200 HP</b>\n"
+    "👹 Кошмар: <b>300 HP</b>\n"
     "⚔️ Оба наносят по <b>20 урона</b>\n\n"
     "📍 Зоны удара: 🧠 голова, 🫀 туловище, 🦵 ноги\n\n"
     "<b>КАК ИДЁТ ХОД:</b>\n"
@@ -200,7 +201,6 @@ def update_combo(game, zone):
             return 3
         return game["combo_progress"]
 
-    # Сброс
     if zone == seq[0]:
         game["combo_progress"] = 1
         return 1
@@ -290,9 +290,9 @@ def check_end(game):
 
 def hint_text(step):
     if step == 1:
-        return "\n\n✨ <i>Ты нащупал что-то... Кажется, ты на верном пути.</i>"
+        return "\n\n✨ <i>Крайт чувствует: что-то дрогнуло во тьме...</i>"
     elif step == 2:
-        return "\n\n✨✨ <i>Почти получилось! Ещё немного — и что-то случится.</i>"
+        return "\n\n✨✨ <i>Лотос почти раскрылся. Ещё удар — и он расцветёт.</i>"
     return ""
 
 
@@ -444,14 +444,24 @@ async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     end = check_end(game)
     if end == "win":
-        text += "\n\n🏆 <b>КРАЙТ ПОБЕДИЛ!</b>"
+        text += (
+            "\n\n🏆 <b>КРАЙТ ПОБЕДИЛ!</b>\n\n"
+            "Лотос расцвёл. Кошмар развеян.\n"
+            "Тьма отступила перед твоим клинком.\n\n"
+            "<i>Но Кошмар не умирает. Он ждёт нового рассвета...</i>"
+        )
         await remove_buttons(query)
         await query.message.reply_text(
             text, parse_mode="HTML", reply_markup=new_game_button()
         )
         return
     elif end == "lose":
-        text += "\n\n💀 <b>КРАЙТ ПРОИГРАЛ!</b>"
+        text += (
+            "\n\n💀 <b>КРАЙТ ПАЛ...</b>\n\n"
+            "Кошмар поглотил свет.\n"
+            "Лотос увял во тьме.\n\n"
+            "<i>Но лотос не умирает — он ждёт нового рассвета.</i>"
+        )
         await remove_buttons(query)
         await query.message.reply_text(
             text, parse_mode="HTML", reply_markup=new_game_button()
@@ -554,7 +564,12 @@ async def stun_attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     end = check_end(game)
     if end == "win":
-        text += "\n\n🏆 <b>КРАЙТ ПОБЕДИЛ!</b>"
+        text += (
+            "\n\n🏆 <b>КРАЙТ ПОБЕДИЛ!</b>\n\n"
+            "Лотос расцвёл. Кошмар развеян.\n"
+            "Тьма отступила перед твоим клинком.\n\n"
+            "<i>Но Кошмар не умирает. Он ждёт нового рассвета...</i>"
+        )
         await remove_buttons(query)
         await query.message.reply_text(
             text, parse_mode="HTML", reply_markup=new_game_button()
