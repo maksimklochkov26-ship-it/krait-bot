@@ -116,8 +116,9 @@ def create_game():
         "combo_revealed": False,
         "hint_shown": False,
         "in_defense": False,
-        "stun_turns": 0,  # сколько ходов стана осталось
-        "phase": "choose_mode",  # choose_mode | attack | defense | stun
+        "stun_turns": 0,
+        # phase: "attack" | "defense" | "stun_attack" | "finished"
+        "phase": "attack",
     }
 
 
@@ -131,27 +132,40 @@ def status(game):
     )
 
 
-def zone_buttons(callback_prefix):
+def attack_screen_buttons(game, prefix="attack"):
+    """
+    Кнопки экрана атаки: переключатель режима + зоны.
+    prefix: 'attack' для обычного хода, 'stun_attack' для стана.
+    """
+    if game["in_defense"]:
+        mode_label = "⚔️ Выйти из защиты"
+        mode_cb = f"{prefix}_mode:off"
+    else:
+        mode_label = "🛡️ Встать в защиту"
+        mode_cb = f"{prefix}_mode:on"
+
+    mode_row = [InlineKeyboardButton(mode_label, callback_data=mode_cb)]
+    zone_row1 = [
+        InlineKeyboardButton("🧠 Голова", callback_data=f"{prefix}:head"),
+        InlineKeyboardButton("🫀 Туловище", callback_data=f"{prefix}:body"),
+    ]
+    zone_row2 = [
+        InlineKeyboardButton("🦵 Ноги", callback_data=f"{prefix}:legs"),
+    ]
+    return InlineKeyboardMarkup([mode_row, zone_row1, zone_row2])
+
+
+def defense_zone_buttons():
+    """Кнопки для выбора зоны блока (фаза защиты)."""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🧠 Голова", callback_data=f"{callback_prefix}:head"),
-            InlineKeyboardButton("🫀 Туловище", callback_data=f"{callback_prefix}:body"),
+            InlineKeyboardButton("🧠 Голова", callback_data="defense:head"),
+            InlineKeyboardButton("🫀 Туловище", callback_data="defense:body"),
         ],
         [
-            InlineKeyboardButton("🦵 Ноги", callback_data=f"{callback_prefix}:legs"),
+            InlineKeyboardButton("🦵 Ноги", callback_data="defense:legs"),
         ],
     ])
-
-
-def mode_buttons(game):
-    """Кнопка переключения режима — одна."""
-    if game["in_defense"]:
-        label = "⚔️ Выйти из защиты"
-        cb = "mode:off"
-    else:
-        label = "🛡️ Встать в защиту"
-        cb = "mode:on"
-    return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=cb)]])
 
 
 def new_game_button():
@@ -197,7 +211,7 @@ def update_combo(game, zone):
         return 0
 
 
-def format_attack_result(game, out_of_defense):
+def format_attack_result(game):
     krait_zone = game["krait_attack"]
     nightmare_def = game["nightmare_defense"]
 
@@ -207,7 +221,7 @@ def format_attack_result(game, out_of_defense):
             f"👹 Кошмар заблокировал (0 урона)."
         )
     else:
-        dmg = DAMAGE if out_of_defense else DAMAGE // 2
+        dmg = DAMAGE // 2 if game["in_defense"] else DAMAGE
         return (
             f"⚔️ Крайт ударил в {ZONES[krait_zone]} — попал! "
             f"👹 Кошмар получил {dmg} урона."
@@ -224,7 +238,7 @@ def format_defense_result(game):
             f"🛡️ Крайт заблокировал (0 урона)."
         )
     else:
-        dmg = DAMAGE if not game["in_defense"] else DAMAGE // 2
+        dmg = DAMAGE // 2 if game["in_defense"] else DAMAGE
         return (
             f"👹 Кошмар ударил в {ZONES[nightmare_atk]} — попал! "
             f"❤️ Крайт получил {dmg} урона."
@@ -233,6 +247,9 @@ def format_defense_result(game):
 
 def apply_results(game):
     """Применяем результаты хода. Возвращаем тексты."""
+    attack_text = format_attack_result(game)
+    defense_text = format_defense_result(game)
+
     # Урон Крайта по Кошмару
     if game["krait_attack"] != game["nightmare_defense"]:
         if game["in_defense"]:
@@ -252,18 +269,16 @@ def apply_results(game):
     if game["nightmare_hp"] < 0:
         game["nightmare_hp"] = 0
 
-    attack_text = format_attack_result(game, out_of_defense=not game["in_defense"])
-    defense_text = format_defense_result(game)
     return attack_text, defense_text
 
 
 def next_turn(game):
-    """Готовим новый обычный ход."""
+    """Готовим новый обычный ход. Режим сохраняется."""
     game["nightmare_defense"] = random.choice(list(ZONES.keys()))
     game["nightmare_attack"] = random.choice(list(ZONES.keys()))
     game["krait_attack"] = None
     game["krait_defense"] = None
-    game["phase"] = "choose_mode"
+    game["phase"] = "attack"
 
 
 def check_end(game):
@@ -288,27 +303,24 @@ def hint_text(step):
     return ""
 
 
-def mode_prompt(game):
-    """Текст и кнопки для фазы выбора режима."""
-    text = (
-        status(game)
-        + "\n\n🛡️ <b>Выбери режим на этот ход:</b>"
-    )
-    return text, mode_buttons(game)
-
-
 # --- Хэндлеры ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
+    # Если игра уже идёт — сразу начинаем новый бой
     if user_id in games and games[user_id]["phase"] != "finished":
         games[user_id] = create_game()
         game = games[user_id]
-        text, kb = mode_prompt(game)
-        await update.message.reply_text(text, parse_mode="HTML", reply_markup=kb)
+        await update.message.reply_text(
+            status(game)
+            + "\n\n⚔️ <b>Твой ход!</b>\nВыбери действие:",
+            parse_mode="HTML",
+            reply_markup=attack_screen_buttons(game, prefix="attack"),
+        )
         return
 
+    # Иначе — показываем описание
     await update.message.reply_text(
         GAME_DESCRIPTION,
         parse_mode="HTML",
@@ -324,16 +336,20 @@ async def begin_battle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games[user_id] = create_game()
     game = games[user_id]
 
-    text, kb = mode_prompt(game)
-    await query.edit_message_text(text, parse_mode="HTML", reply_markup=kb)
+    await query.edit_message_text(
+        status(game)
+        + "\n\n⚔️ <b>Твой ход!</b>\nВыбери действие:",
+        parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="attack"),
+    )
 
 
 async def rules(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(GAME_DESCRIPTION, parse_mode="HTML")
 
 
-async def mode_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Игрок выбрал режим — переходим к фазе атаки."""
+async def toggle_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переключение режима на экране атаки (обычный ход)."""
     query = update.callback_query
     await query.answer()
 
@@ -344,24 +360,23 @@ async def mode_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Нажми /start.")
         return
 
-    if game["phase"] != "choose_mode":
+    if game["phase"] != "attack":
         await query.answer("Сейчас это действие недоступно.", show_alert=True)
         return
 
     choice = query.data.split(":")[1]
     game["in_defense"] = (choice == "on")
 
-    game["phase"] = "attack"
-
     await query.edit_message_text(
         status(game)
-        + "\n\n⚔️ Выбери, куда атаковать Кошмара:",
+        + "\n\n⚔️ <b>Твой ход!</b>\nВыбери действие:",
         parse_mode="HTML",
-        reply_markup=zone_buttons("attack"),
+        reply_markup=attack_screen_buttons(game, prefix="attack"),
     )
 
 
 async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Игрок выбрал зону атаки — переходим к фазе защиты."""
     query = update.callback_query
     await query.answer()
 
@@ -379,6 +394,7 @@ async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     zone = query.data.split(":")[1]
     game["krait_attack"] = zone
 
+    # Комбо копится здесь (скрыто от игрока)
     step = update_combo(game, zone)
     if step == 3:
         game["stun_turns"] = 1  # стан 1 ход
@@ -389,11 +405,12 @@ async def attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status(game)
         + "\n\n🛡️ Теперь выбери, куда блокировать удар Кошмара:",
         parse_mode="HTML",
-        reply_markup=zone_buttons("defense"),
+        reply_markup=defense_zone_buttons(),
     )
 
 
 async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Игрок выбрал зону блока → показываем итог хода."""
     query = update.callback_query
     await query.answer()
 
@@ -415,7 +432,7 @@ async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = status(game) + "\n\n" + attack_text + "\n" + defense_text
 
-    # Намёки на комбо (если ещё не показывали)
+    # Намёки на комбо (один раз за игру)
     combo_step = game["combo_progress"]
     if not game["hint_shown"] and combo_step in (1, 2):
         text += hint_text(combo_step)
@@ -448,24 +465,27 @@ async def defense_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "\n\n👹 Кошмар оглушён на 1 ход.\n"
             "Он не атакует и не защищается.\n"
             "Ты сам решаешь: выйти из защиты или остаться.\n\n"
-            "⚔️ Выбери режим и ударь:"
+            "⚔️ Выбери действие:"
         )
         text += combo_text
-        game["phase"] = "stun_mode"
+        game["phase"] = "stun_attack"
         await query.edit_message_text(
-            text, parse_mode="HTML", reply_markup=mode_buttons(game)
+            text, parse_mode="HTML",
+            reply_markup=attack_screen_buttons(game, prefix="stun_attack")
         )
         return
 
+    # Обычный следующий ход
     next_turn(game)
-    text += "\n\n🛡️ <b>Новый ход. Выбери режим:</b>"
+    text += "\n\n⚔️ <b>Твой ход!</b>\nВыбери действие:"
     await query.edit_message_text(
-        text, parse_mode="HTML", reply_markup=mode_buttons(game)
+        text, parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="attack")
     )
 
 
-async def stun_mode_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """В стане игрок выбрал режим — переходим к удару."""
+async def stun_toggle_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Переключение режима на экране атаки в стане."""
     query = update.callback_query
     await query.answer()
 
@@ -476,21 +496,19 @@ async def stun_mode_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Нажми /start.")
         return
 
-    if game["phase"] != "stun_mode":
+    if game["phase"] != "stun_attack":
         await query.answer("Сейчас это действие недоступно.", show_alert=True)
         return
 
     choice = query.data.split(":")[1]
     game["in_defense"] = (choice == "on")
 
-    game["phase"] = "stun_attack"
-
     await query.edit_message_text(
         status(game)
         + f"\n\n🔥 Кошмар оглушён. Осталось ходов стана: {game['stun_turns']}\n"
-          "⚔️ Выбери, куда бить:",
+          "⚔️ Выбери действие:",
         parse_mode="HTML",
-        reply_markup=zone_buttons("stun_attack"),
+        reply_markup=attack_screen_buttons(game, prefix="stun_attack"),
     )
 
 
@@ -530,7 +548,7 @@ async def stun_attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # Комбо копится и в стане
-    step = update_combo(game, zone)
+    update_combo(game, zone)
 
     end = check_end(game)
     if end == "win":
@@ -544,22 +562,23 @@ async def stun_attack_phase(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game["stun_turns"] -= 1
 
     if game["stun_turns"] > 0:
-        # Ещё есть стан
         text += (
             f"\n\n🔥 Кошмар всё ещё оглушён. Осталось ходов стана: {game['stun_turns']}\n"
-            "⚔️ Выбери режим и бей снова:"
+            "⚔️ Выбери действие:"
         )
-        game["phase"] = "stun_mode"
+        game["phase"] = "stun_attack"
         await query.edit_message_text(
-            text, parse_mode="HTML", reply_markup=mode_buttons(game)
+            text, parse_mode="HTML",
+            reply_markup=attack_screen_buttons(game, prefix="stun_attack")
         )
         return
 
     # Стан закончился — новый обычный ход
     next_turn(game)
-    text += "\n\n🔥 Стан закончился.\n🛡️ <b>Новый ход. Выбери режим:</b>"
+    text += "\n\n🔥 Стан закончился.\n⚔️ <b>Твой ход!</b>\nВыбери действие:"
     await query.edit_message_text(
-        text, parse_mode="HTML", reply_markup=mode_buttons(game)
+        text, parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="attack")
     )
 
 
@@ -571,12 +590,13 @@ async def new_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     games[user_id] = create_game()
     game = games[user_id]
 
-    text = (
+    await query.edit_message_text(
         status(game)
         + "\n\n👹 <b>НОВАЯ БИТВА!</b>\n"
-          "🛡️ Выбери режим:"
+          "⚔️ Выбери действие:",
+        parse_mode="HTML",
+        reply_markup=attack_screen_buttons(game, prefix="attack"),
     )
-    await query.edit_message_text(text, parse_mode="HTML", reply_markup=mode_buttons(game))
 
 
 def main():
@@ -593,11 +613,11 @@ def main():
     app.add_handler(CommandHandler("rules", rules))
 
     app.add_handler(CallbackQueryHandler(begin_battle, pattern=r"^begin_battle$"))
-    app.add_handler(CallbackQueryHandler(mode_choice, pattern=r"^mode:(on|off)$"))
-    app.add_handler(CallbackQueryHandler(attack_phase, pattern=r"^attack:"))
+    app.add_handler(CallbackQueryHandler(toggle_mode, pattern=r"^attack_mode:(on|off)$"))
+    app.add_handler(CallbackQueryHandler(attack_phase, pattern=r"^attack:(head|body|legs)$"))
     app.add_handler(CallbackQueryHandler(defense_phase, pattern=r"^defense:"))
-    app.add_handler(CallbackQueryHandler(stun_mode_choice, pattern=r"^mode:(on|off)$"))
-    app.add_handler(CallbackQueryHandler(stun_attack_phase, pattern=r"^stun_attack:"))
+    app.add_handler(CallbackQueryHandler(stun_toggle_mode, pattern=r"^stun_attack_mode:(on|off)$"))
+    app.add_handler(CallbackQueryHandler(stun_attack_phase, pattern=r"^stun_attack:(head|body|legs)$"))
     app.add_handler(CallbackQueryHandler(new_game, pattern=r"^new_game$"))
 
     print("Крайт против Кошмара запущен!")
